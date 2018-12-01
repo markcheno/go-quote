@@ -123,9 +123,11 @@ func getPrecision(symbol string) int {
 	var precision int
 	precision = 2
 	if strings.Contains(strings.ToUpper(symbol), "BTC") ||
-		strings.Contains(strings.ToUpper(symbol), "ETH") ||
-		strings.Contains(strings.ToUpper(symbol), "USD") {
+		strings.Contains(strings.ToUpper(symbol), "ETH") {
 		precision = 8
+	}
+	if strings.Contains(strings.ToUpper(symbol), "USD") {
+		precision = 4
 	}
 	return precision
 }
@@ -1350,7 +1352,7 @@ func NewQuoteFromBinance(symbol string, startDate, endDate string, period Period
 	for startBar.Before(end) {
 
 		url := fmt.Sprintf(
-			"https://api.binance.com/api/v1/klines?symbol=%s&interval=%s&startTime=%d&endTime=%d",
+			"https://www.binance.co/api/v1/klines?symbol=%s&interval=%s&startTime=%d&endTime=%d&limit=1000",
 			strings.ToUpper(symbol),
 			interval,
 			startBar.UnixNano()/1000000,
@@ -1525,6 +1527,11 @@ var ValidMarkets = [...]string{"etf",
 	"tiingo-btc",
 	"tiingo-eth",
 	"tiingo-usd",
+	"huobi-ht",
+	"huobi-btc",
+	"huobi-eth",
+	"huobi-usdt",
+	"kraken",
 }
 
 // ValidMarket - validate market string
@@ -1595,19 +1602,29 @@ func NewMarketList(market string) ([]string, error) {
 	case "bittrex-usdt":
 		url = "https://bittrex.com/Api/v2.0/pub/markets/getmarketsummaries"
 	case "binance-bnb":
-		url = "https://api.binance.com/api/v1/exchangeInfo"
+		url = "https://www.binance.co/api/v1/exchangeInfo"
 	case "binance-btc":
-		url = "https://api.binance.com/api/v1/exchangeInfo"
+		url = "https://www.binance.co/api/v1/exchangeInfo"
 	case "binance-eth":
-		url = "https://api.binance.com/api/v1/exchangeInfo"
+		url = "https://www.binance.co/api/v1/exchangeInfo"
 	case "binance-usdt":
-		url = "https://api.binance.com/api/v1/exchangeInfo"
+		url = "https://www.binance.co/api/v1/exchangeInfo"
 	case "tiingo-btc":
 		url = fmt.Sprintf("https://api.tiingo.com/tiingo/crypto?token=%s", os.Getenv("TIINGO_API_TOKEN"))
 	case "tiingo-eth":
 		url = fmt.Sprintf("https://api.tiingo.com/tiingo/crypto?token=%s", os.Getenv("TIINGO_API_TOKEN"))
 	case "tiingo-usd":
 		url = fmt.Sprintf("https://api.tiingo.com/tiingo/crypto?token=%s", os.Getenv("TIINGO_API_TOKEN"))
+	case "huobi-bnb":
+		url = "https://api.huobi.br.com/v1/common/symbols"
+	case "huobi-btc":
+		url = "https://api.huobi.br.com/v1/common/symbols"
+	case "huobi-eth":
+		url = "https://api.huobi.br.com/v1/common/symbols"
+	case "huobi-usdt":
+		url = "https://api.huobi.br.com/v1/common/symbols"
+	case "kraken":
+		url = "https://api.kraken.com/0/public/AssetPairs"
 	}
 
 	resp, err := http.Get(url)
@@ -1636,6 +1653,20 @@ func NewMarketList(market string) ([]string, error) {
 		newStr := buf.String()
 
 		return getTiingoCryptoMarket(market, newStr)
+	}
+
+	if strings.HasPrefix(market, "huobi") {
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(resp.Body)
+		newStr := buf.String()
+		return getHuobiMarket(market, newStr)
+	}
+
+	if strings.HasPrefix(market, "kraken") {
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(resp.Body)
+		newStr := buf.String()
+		return getKrakenMarket(market, newStr)
 	}
 
 	var csvdata [][]string

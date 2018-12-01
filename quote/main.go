@@ -18,7 +18,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/markcheno/go-quote"
+	"github.com/kjx98/go-quote"
 )
 
 var usage = `Usage:
@@ -36,7 +36,7 @@ Options:
   -infile=<filename>   list of symbols to download
   -outfile=<filename>  output filename
   -period=<period>     1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|d|3d|w|m [default=d]
-  -source=<source>     yahoo|google|tiingo|tiingo-crypto|gdax|bittrex|binance [default=yahoo]
+  -source=<source>     yahoo|google|tiingo|tiingo-crypto|gdax|bittrex|binance|huobi|kraken [default=yahoo]
   -token=<tiingo_tok>  tingo api token [default=TIINGO_API_TOKEN]
   -format=<format>     (csv|json|hs|ami) [default=csv]
   -adjust=<bool>       adjust yahoo prices [default=true]
@@ -55,12 +55,13 @@ sectors:    basicindustries,capitalgoods,consumerdurables,consumernondurable,
             utilities,technolog,transportation
 crypto:     bittrex-btc,bittrex-eth,bittrex-usdt,
             binance-bnb,binance-btc,binance-eth,binance-usdt
-            tiingo-btc,tiingo-eth,tiingo-usd
+            tiingo-btc,tiingo-eth,tiingo-usd,huobi-ht,huobi-btc
+            huobi-eth,huobi-usdt,kraken
 all:        allmarkets
 `
 
 const (
-	version    = "0.2"
+	version    = "0.2.1"
 	dateFormat = "2006-01-02"
 )
 
@@ -99,8 +100,10 @@ func checkFlags(flags quoteflags) error {
 		flags.source != "tiingo-crypto" &&
 		flags.source != "gdax" &&
 		flags.source != "bittrex" &&
+		flags.source != "huobi" &&
+		flags.source != "kraken" &&
 		flags.source != "binance" {
-		return fmt.Errorf("invalid source, must be either 'yahoo', 'google', 'tiingo', 'gdax', 'bittrex', or 'binance'")
+		return fmt.Errorf("invalid source, must be either 'yahoo', 'google', 'tiingo', 'gdax', 'bittrex', or 'binance', or 'huobi', 'kraken'")
 	}
 
 	// validate period
@@ -160,6 +163,30 @@ func checkFlags(flags quoteflags) error {
 			flags.period == "w" ||
 			flags.period == "m") {
 		return fmt.Errorf("invalid source for binance, must be '1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', or '1M'")
+	}
+
+	if flags.source == "huobi" &&
+		!(flags.period == "1m" ||
+			flags.period == "5m" ||
+			flags.period == "15m" ||
+			flags.period == "30m" ||
+			flags.period == "1h" ||
+			flags.period == "d" ||
+			flags.period == "w" ||
+			flags.period == "m") {
+		return fmt.Errorf("invalid source for huobi, must be '1m', '5m', '15m', '30m', '1h', '1d', '1w', or '1M'")
+	}
+
+	if flags.source == "kraken" &&
+		!(flags.period == "1m" ||
+			flags.period == "5m" ||
+			flags.period == "15m" ||
+			flags.period == "30m" ||
+			flags.period == "1h" ||
+			flags.period == "4h" ||
+			flags.period == "d" ||
+			flags.period == "w") {
+		return fmt.Errorf("invalid source for kraken, must be '1m', '5m', '15m', '30m', '1h', '4h', '1d', or '1w'")
 	}
 
 	//if flags.source == "google" && (flags.period == "w" || flags.period == "m") {
@@ -262,7 +289,8 @@ func getTimes(flags quoteflags) (time.Time, time.Time) {
 	if flags.start != "" {
 		from = quote.ParseDateString(flags.start)
 	} else { // use years
-		from = to.Add(-time.Duration(int(time.Hour) * 24 * 365 * flags.years))
+		yearSec := int64(time.Hour) * 24 * 365
+		from = to.Add(-time.Duration(yearSec * int64(flags.years)))
 	}
 	return from, to
 }
@@ -287,6 +315,10 @@ func outputAll(symbols []string, flags quoteflags) error {
 		quotes, err = quote.NewQuotesFromBittrexSyms(symbols, period)
 	} else if flags.source == "binance" {
 		quotes, err = quote.NewQuotesFromBinanceSyms(symbols, from.Format(dateFormat), to.Format(dateFormat), period)
+	} else if flags.source == "huobi" {
+		quotes, err = quote.NewQuotesFromHuobiSyms(symbols, period)
+	} else if flags.source == "kraken" {
+		quotes, err = quote.NewQuotesFromKrakenSyms(symbols, period)
 	}
 	if err != nil {
 		return err
@@ -326,6 +358,10 @@ func outputIndividual(symbols []string, flags quoteflags) error {
 			q, _ = quote.NewQuoteFromBittrex(sym, period)
 		} else if flags.source == "binance" {
 			q, _ = quote.NewQuoteFromBinance(sym, from.Format(dateFormat), to.Format(dateFormat), period)
+		} else if flags.source == "huobi" {
+			q, _ = quote.NewQuoteFromHuobi(sym, period)
+		} else if flags.source == "kraken" {
+			q, _ = quote.NewQuoteFromKraken(sym, period)
 		}
 		var err error
 		if flags.format == "csv" {
@@ -370,7 +406,7 @@ func main() {
 	flag.StringVar(&flags.start, "start", "", "start date (yyyy[-mm[-dd]])")
 	flag.StringVar(&flags.end, "end", "", "end date (yyyy[-mm[-dd]])")
 	flag.StringVar(&flags.period, "period", "d", "1m|5m|15m|30m|1h|d")
-	flag.StringVar(&flags.source, "source", "yahoo", "yahoo|google|tiingo|gdax|bittrex|binance")
+	flag.StringVar(&flags.source, "source", "yahoo", "yahoo|google|tiingo|gdax|bittrex|binance|huobi|kraken")
 	flag.StringVar(&flags.token, "token", os.Getenv("TIINGO_API_TOKEN"), "tiingo api token")
 	flag.StringVar(&flags.infile, "infile", "", "input filename")
 	flag.StringVar(&flags.outfile, "outfile", "", "output filename")
