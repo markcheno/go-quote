@@ -1,17 +1,15 @@
 #
-#	Makefile for hookAPI
+#	Makefile
 #
 # switches:
 #	define the ones you want in the CFLAGS definition...
 #
-#	TRACE		- turn on tracing/debugging code
 #
 #
 #
 #
 
 # Version for distribution
-VER=1_0r1
 GOPATH=$(shell go env GOPATH):$(PWD)
 
 export GOPATH
