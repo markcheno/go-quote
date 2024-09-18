@@ -938,7 +938,7 @@ func NewQuoteFromCoinbase(symbol, startDate, endDate string, period Period) (Quo
 	for startBar.Before(end) {
 
 		url := fmt.Sprintf(
-			"https://api.pro.coinbase.com/products/%s/candles?start=%s&end=%s&granularity=%d",
+			"https://api.exchange.coinbase.com/products/%s/candles?start=%s&end=%s&granularity=%d",
 			symbol,
 			url.QueryEscape(startBar.Format(time.RFC3339)),
 			url.QueryEscape(endBar.Format(time.RFC3339)),
@@ -971,16 +971,16 @@ func NewQuoteFromCoinbase(symbol, startDate, endDate string, period Period) (Quo
 		for row := 0; row < numrows; row++ {
 			bar := numrows - 1 - row // reverse the order
 			q.Date[bar] = time.Unix(int64(bars[row][0]), 0)
-			q.Open[bar] = bars[row][1]
+			q.Low[bar] = bars[row][1]
 			q.High[bar] = bars[row][2]
-			q.Low[bar] = bars[row][3]
+			q.Open[bar] = bars[row][3]
 			q.Close[bar] = bars[row][4]
 			q.Volume[bar] = bars[row][5]
 		}
 		quote.Date = append(quote.Date, q.Date...)
-		quote.Open = append(quote.Open, q.Open...)
-		quote.High = append(quote.High, q.High...)
 		quote.Low = append(quote.Low, q.Low...)
+		quote.High = append(quote.High, q.High...)
+		quote.Open = append(quote.Open, q.Open...)
 		quote.Close = append(quote.Close, q.Close...)
 		quote.Volume = append(quote.Volume, q.Volume...)
 
@@ -1173,7 +1173,7 @@ func NewMarketList(market string) ([]string, error) {
 	case "tiingo-usd":
 		url = fmt.Sprintf("https://api.tiingo.com/tiingo/crypto?token=%s", os.Getenv("TIINGO_API_TOKEN"))
 	case "coinbase":
-		url = "https://api.pro.coinbase.com/products"
+		url = "https://api.exchange.coinbase.com/products"
 	}
 
 	req, _ := http.NewRequest("GET", url, nil)
