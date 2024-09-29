@@ -12,7 +12,6 @@ package quote
 import (
 	"bufio"
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -530,60 +529,138 @@ func NewQuoteFromYahoo(symbol, startDate, endDate string, period Period, adjustQ
 	client.Do(initReq)
 
 	url := fmt.Sprintf(
-		"https://query1.finance.yahoo.com/v7/finance/download/%s?period1=%d&period2=%d&interval=1d&events=history&corsDomain=finance.yahoo.com",
+		"https://query2.finance.yahoo.com/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d&events=history&corsDomain=finance.yahoo.com",
 		symbol,
 		from.Unix(),
 		to.Unix())
 	resp, err = client.Get(url)
+	// Error getting response from the client.
 	if err != nil {
-		Log.Printf("symbol '%s' not found\n", symbol)
+		Log.Printf("Error: symbol '%s' not found\n", symbol)
 		return NewQuote("", 0), err
 	}
 	defer resp.Body.Close()
-
-	var csvdata [][]string
-	reader := csv.NewReader(resp.Body)
-	csvdata, err = reader.ReadAll()
+	// Read all bytes of the response body.
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Log.Printf("bad data for symbol '%s'\n", symbol)
+		Log.Printf("Error: bad data for symbol '%s'\n", symbol)
+		return NewQuote("", 0), err
+	}
+	// Unmarshal the bytes into a dynamic JSON object.
+	var jsonResponse map[string]interface{}
+	err = json.Unmarshal(respBody, &jsonResponse)
+	if err != nil {
+		Log.Printf("Error: bad data for symbol '%s'\n", symbol)
+		return NewQuote("", 0), err
+	}
+	// Dynamically parse the tree of JSON to get the data we need.
+	chart, ok := jsonResponse["chart"].(map[string]interface{})
+	if !ok {
+		Log.Printf("Error: Invalid chart structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	result, ok := chart["result"].([]interface{})
+	if !ok || len(result) == 0 {
+		log.Fatal("Error: Invalid result structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	firstResult, ok := result[0].(map[string]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid result[0] structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	timestamps, ok := firstResult["timestamp"].([]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid timestamp structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	indicators, ok := firstResult["indicators"].(map[string]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid indicators structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	quote, ok := indicators["quote"].([]interface{})
+	if !ok || len(quote) == 0 {
+		log.Fatal("Error: Invalid quote structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	firstQuote, ok := quote[0].(map[string]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid quote[0] structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	high, ok := firstQuote["high"].([]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid high structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	low, ok := firstQuote["low"].([]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid low structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	open, ok := firstQuote["open"].([]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid open structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	volume, ok := firstQuote["volume"].([]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid volume structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	close, ok := firstQuote["close"].([]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid close structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	adjCloseObj, ok := indicators["adjclose"].([]interface{})
+	if !ok || len(quote) == 0 {
+		log.Fatal("Error: Invalid adjclose structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	firstAdjClose, ok := adjCloseObj[0].(map[string]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid adjclose[0] structure within JSON response")
+		return NewQuote("", 0), err
+	}
+	adjClose, ok := firstAdjClose["adjclose"].([]interface{})
+	if !ok {
+		log.Fatal("Error: Invalid adjclose inner structure within JSON response")
 		return NewQuote("", 0), err
 	}
 
-	numrows := len(csvdata) - 1
-	quote := NewQuote(symbol, numrows)
+	quoteObj := NewQuote(symbol, len(timestamps))
 
-	for row := 1; row < len(csvdata); row++ {
+	for row := 0; row < len(timestamps); row++ {
 
-		// Parse row of data
-		d, _ := time.Parse("2006-01-02", csvdata[row][0])
-		o, _ := strconv.ParseFloat(csvdata[row][1], 64)
-		h, _ := strconv.ParseFloat(csvdata[row][2], 64)
-		l, _ := strconv.ParseFloat(csvdata[row][3], 64)
-		c, _ := strconv.ParseFloat(csvdata[row][4], 64)
-		a, _ := strconv.ParseFloat(csvdata[row][5], 64)
-		v, _ := strconv.ParseFloat(csvdata[row][6], 64)
+		o := open[row].(float64)
+		h := high[row].(float64)
+		l := low[row].(float64)
+		c := close[row].(float64)
+		a := adjClose[row].(float64)
+		v := volume[row].(float64)
 
-		quote.Date[row-1] = d
+		quoteObj.Date[row] = time.Unix(int64(timestamps[row].(float64)), 0)
 
 		// Adjustment ratio
 		if adjustQuote {
-			quote.Open[row-1] = o
-			quote.High[row-1] = h
-			quote.Low[row-1] = l
-			quote.Close[row-1] = a
+			quoteObj.Open[row] = o
+			quoteObj.High[row] = h
+			quoteObj.Low[row] = l
+			quoteObj.Close[row] = a
 		} else {
 			ratio := c / a
-			quote.Open[row-1] = o * ratio
-			quote.High[row-1] = h * ratio
-			quote.Low[row-1] = l * ratio
-			quote.Close[row-1] = c
+			quoteObj.Open[row] = o * ratio
+			quoteObj.High[row] = h * ratio
+			quoteObj.Low[row] = l * ratio
+			quoteObj.Close[row] = c
 		}
 
-		quote.Volume[row-1] = v
-
+		quoteObj.Volume[row] = v
 	}
 
-	return quote, nil
+	return quoteObj, nil
 }
 
 /*
