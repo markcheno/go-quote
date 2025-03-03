@@ -1,10 +1,9 @@
 /*
 Package quote is free quote downloader library and cli
 
-Downloads daily/weekly/monthly/yearly historical price quotes from Yahoo
-and daily/intraday data from Tiingo, crypto from Coinbase
+Downloads historical price quotes from Tiingo and Coinbase
 
-Copyright 2024 Mark Chenoweth
+Copyright 2025 Mark Chenoweth
 Licensed under terms of MIT license
 
 */
@@ -36,10 +35,9 @@ Options:
   -infile=<filename>   list of symbols to download
   -outfile=<filename>  output filename
   -period=<period>     1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|d|3d|w|m [default=d]
-  -source=<source>     yahoo|tiingo|tiingo-crypto|coinbase [default=yahoo]
+  -source=<source>     tiingo|tiingo-crypto|coinbase [default=tiingo]
   -token=<tiingo_tok>  tingo api token [default=TIINGO_API_TOKEN]
   -format=<format>     (csv|json|hs|ami) [default=csv]
-  -adjust=<bool>       adjust yahoo prices [default=true]
   -all=<bool>          all in one file (true|false) [default=false]
   -log=<dest>          filename|stdout|stderr|discard [default=stdout]
   -delay=<ms>          delay in milliseconds between quote requests
@@ -54,7 +52,7 @@ coinbase,tiingo-usd,tiingo-btc,tiingo-eth
 `
 
 const (
-	version    = "0.3"
+	version    = "0.4"
 	dateFormat = "2006-01-02"
 )
 
@@ -71,7 +69,6 @@ type quoteflags struct {
 	format  string
 	log     string
 	all     bool
-	adjust  bool
 	version bool
 }
 
@@ -87,18 +84,13 @@ func check(e error) {
 func checkFlags(flags quoteflags) error {
 
 	// validate source
-	if flags.source != "yahoo" &&
-		flags.source != "tiingo" &&
+	if flags.source != "tiingo" &&
 		flags.source != "tiingo-crypto" &&
 		flags.source != "coinbase" {
-		return fmt.Errorf("invalid source, must be either 'yahoo', 'tiingo', or 'coinbase'")
+		return fmt.Errorf("invalid source, must be either 'tiingo', 'tiingo-crypto', or 'coinbase'")
 	}
 
 	// validate period
-	if flags.source == "yahoo" &&
-		(flags.period == "1m" || flags.period == "5m" || flags.period == "15m" || flags.period == "30m" || flags.period == "1h") {
-		return fmt.Errorf("invalid period for yahoo, must be 'd'")
-	}
 	if flags.source == "tiingo" {
 		// check period
 		if flags.period != "d" {
@@ -241,9 +233,7 @@ func outputAll(symbols []string, flags quoteflags) error {
 	period := getPeriod(flags.period)
 	quotes := quote.Quotes{}
 	var err error
-	if flags.source == "yahoo" {
-		quotes, err = quote.NewQuotesFromYahooSyms(symbols, from.Format(dateFormat), to.Format(dateFormat), period, flags.adjust)
-	} else if flags.source == "tiingo" {
+	if flags.source == "tiingo" {
 		quotes, err = quote.NewQuotesFromTiingoSyms(symbols, from.Format(dateFormat), to.Format(dateFormat), flags.token)
 	} else if flags.source == "tiingo-crypto" {
 		quotes, err = quote.NewQuotesFromTiingoCryptoSyms(symbols, from.Format(dateFormat), to.Format(dateFormat), period, flags.token)
@@ -274,9 +264,7 @@ func outputIndividual(symbols []string, flags quoteflags) error {
 
 	for _, sym := range symbols {
 		var q quote.Quote
-		if flags.source == "yahoo" {
-			q, _ = quote.NewQuoteFromYahoo(sym, from.Format(dateFormat), to.Format(dateFormat), period, flags.adjust)
-		} else if flags.source == "tiingo" {
+		if flags.source == "tiingo" {
 			q, _ = quote.NewQuoteFromTiingo(sym, from.Format(dateFormat), to.Format(dateFormat), flags.token)
 		} else if flags.source == "tiingo-crypto" {
 			q, _ = quote.NewQuoteFromTiingoCrypto(sym, from.Format(dateFormat), to.Format(dateFormat), period, flags.token)
@@ -327,14 +315,13 @@ func main() {
 	flag.StringVar(&flags.start, "start", "", "start date (yyyy[-mm[-dd]])")
 	flag.StringVar(&flags.end, "end", "", "end date (yyyy[-mm[-dd]])")
 	flag.StringVar(&flags.period, "period", "d", "1m|5m|15m|30m|1h|d")
-	flag.StringVar(&flags.source, "source", "yahoo", "yahoo|tiingo|coinbase")
+	flag.StringVar(&flags.source, "source", "tiingo", "tiingo|tiingo-crypto|coinbase")
 	flag.StringVar(&flags.token, "token", os.Getenv("TIINGO_API_TOKEN"), "tiingo api token")
 	flag.StringVar(&flags.infile, "infile", "", "input filename")
 	flag.StringVar(&flags.outfile, "outfile", "", "output filename")
 	flag.StringVar(&flags.format, "format", "csv", "csv|json")
 	flag.StringVar(&flags.log, "log", "stdout", "<filename>|stdout")
 	flag.BoolVar(&flags.all, "all", false, "all output in one file")
-	flag.BoolVar(&flags.adjust, "adjust", true, "adjust Yahoo prices")
 	flag.BoolVar(&flags.version, "v", false, "show version")
 	flag.BoolVar(&flags.version, "version", false, "show version")
 	flag.Parse()

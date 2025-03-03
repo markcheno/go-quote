@@ -1,10 +1,9 @@
 /*
 Package quote is free quote downloader library and cli
 
-Downloads daily/weekly/monthly historical price quotes from Yahoo
-and daily/intraday data from Tiingo
+# Downloads historical price quotes from Tiingo and Coinbase
 
-Copyright 2024 Mark Chenoweth
+Copyright 2025 Mark Chenoweth
 Licensed under terms of MIT license (see LICENSE)
 */
 package quote
@@ -13,10 +12,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/textproto"
@@ -504,262 +503,28 @@ func NewQuotesFromJSONFile(filename string) (Quotes, error) {
 	return NewQuotesFromJSON(string(jsn))
 }
 
-// NewQuoteFromYahoo - Yahoo historical prices for a symbol
-func NewQuoteFromYahoo(symbol, startDate, endDate string, period Period, adjustQuote bool) (Quote, error) {
+// pickRandomUserAgent selects a random user agent from the list
+func pickRandomUserAgent() string {
+	var USER_AGENTS = []string{
+		// Chrome
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
 
-	var resp *http.Response
+		// Firefox
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:135.0) Gecko/20100101 Firefox/135.0",
+		"Mozilla/5.0 (X11; Linux i686; rv:135.0) Gecko/20100101 Firefox/135.0",
 
-	if period != Daily {
-		Log.Printf("Yahoo intraday data no longer supported\n")
-		return NewQuote("", 0), errors.New("yahoo intraday data no longer supported")
+		// Safari
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15",
+
+		// Edge
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/131.0.2903.86",
 	}
 
-	from := ParseDateString(startDate)
-	to := ParseDateString(endDate)
-
-	client := &http.Client{
-		Timeout: ClientTimeout,
-	}
-
-	initReq, err := http.NewRequest("GET", "https://finance.yahoo.com", nil)
-	if err != nil {
-		return NewQuote("", 0), err
-	}
-	initReq.Header.Set("User-Agent", "Mozilla/5.0 (X11; U; Linux i686) Gecko/20071127 Firefox/2.0.0.11")
-	client.Do(initReq)
-
-	url := fmt.Sprintf(
-		"https://query2.finance.yahoo.com/v8/finance/chart/%s?period1=%d&period2=%d&interval=1d&events=history&corsDomain=finance.yahoo.com",
-		symbol,
-		from.Unix(),
-		to.Unix())
-	resp, err = client.Get(url)
-	// Error getting response from the client.
-	if err != nil {
-		Log.Printf("Error: symbol '%s' not found\n", symbol)
-		return NewQuote("", 0), err
-	}
-	defer resp.Body.Close()
-	// Read all bytes of the response body.
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Log.Printf("Error: bad data for symbol '%s'\n", symbol)
-		return NewQuote("", 0), err
-	}
-	// Unmarshal the bytes into a dynamic JSON object.
-	var jsonResponse map[string]interface{}
-	err = json.Unmarshal(respBody, &jsonResponse)
-	if err != nil {
-		Log.Printf("Error: bad data for symbol '%s'\n", symbol)
-		return NewQuote("", 0), err
-	}
-	// Dynamically parse the tree of JSON to get the data we need.
-	chart, ok := jsonResponse["chart"].(map[string]interface{})
-	if !ok {
-		Log.Printf("Error: Invalid chart structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	result, ok := chart["result"].([]interface{})
-	if !ok || len(result) == 0 {
-		log.Fatal("Error: Invalid result structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	firstResult, ok := result[0].(map[string]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid result[0] structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	timestamps, ok := firstResult["timestamp"].([]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid timestamp structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	indicators, ok := firstResult["indicators"].(map[string]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid indicators structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	quote, ok := indicators["quote"].([]interface{})
-	if !ok || len(quote) == 0 {
-		log.Fatal("Error: Invalid quote structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	firstQuote, ok := quote[0].(map[string]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid quote[0] structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	high, ok := firstQuote["high"].([]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid high structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	low, ok := firstQuote["low"].([]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid low structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	open, ok := firstQuote["open"].([]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid open structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	volume, ok := firstQuote["volume"].([]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid volume structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	close, ok := firstQuote["close"].([]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid close structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	adjCloseObj, ok := indicators["adjclose"].([]interface{})
-	if !ok || len(quote) == 0 {
-		log.Fatal("Error: Invalid adjclose structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	firstAdjClose, ok := adjCloseObj[0].(map[string]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid adjclose[0] structure within JSON response")
-		return NewQuote("", 0), err
-	}
-	adjClose, ok := firstAdjClose["adjclose"].([]interface{})
-	if !ok {
-		log.Fatal("Error: Invalid adjclose inner structure within JSON response")
-		return NewQuote("", 0), err
-	}
-
-	quoteObj := NewQuote(symbol, len(timestamps))
-
-	for row := 0; row < len(timestamps); row++ {
-
-		o := open[row].(float64)
-		h := high[row].(float64)
-		l := low[row].(float64)
-		c := close[row].(float64)
-		a := adjClose[row].(float64)
-		v := volume[row].(float64)
-
-		quoteObj.Date[row] = time.Unix(int64(timestamps[row].(float64)), 0)
-
-		// Adjustment ratio
-		if adjustQuote {
-			quoteObj.Open[row] = o
-			quoteObj.High[row] = h
-			quoteObj.Low[row] = l
-			quoteObj.Close[row] = a
-		} else {
-			ratio := c / a
-			quoteObj.Open[row] = o * ratio
-			quoteObj.High[row] = h * ratio
-			quoteObj.Low[row] = l * ratio
-			quoteObj.Close[row] = c
-		}
-
-		quoteObj.Volume[row] = v
-	}
-
-	return quoteObj, nil
-}
-
-/*
-func NewQuoteFromYahoo(symbol, startDate, endDate string, period Period, adjustQuote bool) (Quote, error) {
-
-	from := ParseDateString(startDate)
-	to := ParseDateString(endDate)
-
-	url := fmt.Sprintf(
-		"http://ichart.yahoo.com/table.csv?s=%s&a=%d&b=%d&c=%d&d=%d&e=%d&f=%d&g=%s&ignore=.csv",
-		symbol,
-		from.Month()-1, from.Day(), from.Year(),
-		to.Month()-1, to.Day(), to.Year(),
-		period)
-	resp, err := http.Get(url)
-	if err != nil {
-		Log.Printf("symbol '%s' not found\n", symbol)
-		return NewQuote("", 0), err
-	}
-	defer resp.Body.Close()
-
-	var csvdata [][]string
-	reader := csv.NewReader(resp.Body)
-	csvdata, err = reader.ReadAll()
-	if err != nil {
-		Log.Printf("bad data for symbol '%s'\n", symbol)
-		return NewQuote("", 0), err
-	}
-
-	numrows := len(csvdata) - 1
-	quote := NewQuote(symbol, numrows)
-
-	for row := 1; row < len(csvdata); row++ {
-
-		// Parse row of data
-		d, _ := time.Parse("2006-01-02", csvdata[row][0])
-		o, _ := strconv.ParseFloat(csvdata[row][1], 64)
-		h, _ := strconv.ParseFloat(csvdata[row][2], 64)
-		l, _ := strconv.ParseFloat(csvdata[row][3], 64)
-		c, _ := strconv.ParseFloat(csvdata[row][4], 64)
-		v, _ := strconv.ParseFloat(csvdata[row][5], 64)
-		a, _ := strconv.ParseFloat(csvdata[row][6], 64)
-
-		// Adjustment factor
-		factor := 1.0
-		if adjustQuote {
-			factor = a / c
-		}
-
-		// Append to quote
-		bar := numrows - row // reverse the order
-		quote.Date[bar] = d
-		quote.Open[bar] = o * factor
-		quote.High[bar] = h * factor
-		quote.Low[bar] = l * factor
-		quote.Close[bar] = c * factor
-		quote.Volume[bar] = v
-
-	}
-
-	return quote, nil
-}
-*/
-
-// NewQuotesFromYahoo - create a list of prices from symbols in file
-func NewQuotesFromYahoo(filename, startDate, endDate string, period Period, adjustQuote bool) (Quotes, error) {
-
-	quotes := Quotes{}
-	inFile, err := os.Open(filename)
-	if err != nil {
-		return quotes, err
-	}
-	defer inFile.Close()
-	scanner := bufio.NewScanner(inFile)
-	scanner.Split(bufio.ScanLines)
-
-	for scanner.Scan() {
-		sym := scanner.Text()
-		quote, err := NewQuoteFromYahoo(sym, startDate, endDate, period, adjustQuote)
-		if err == nil {
-			quotes = append(quotes, quote)
-		}
-		time.Sleep(Delay * time.Millisecond)
-	}
-	return quotes, nil
-}
-
-// NewQuotesFromYahooSyms - create a list of prices from symbols in string array
-func NewQuotesFromYahooSyms(symbols []string, startDate, endDate string, period Period, adjustQuote bool) (Quotes, error) {
-
-	quotes := Quotes{}
-	for _, symbol := range symbols {
-		quote, err := NewQuoteFromYahoo(symbol, startDate, endDate, period, adjustQuote)
-		if err == nil {
-			quotes = append(quotes, quote)
-		}
-		time.Sleep(Delay * time.Millisecond)
-	}
-	return quotes, nil
+	rand.NewSource(time.Now().UnixNano())
+	return USER_AGENTS[rand.Intn(len(USER_AGENTS))]
 }
 
 func tiingoDaily(symbol string, from, to time.Time, token string) (Quote, error) {
