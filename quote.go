@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-// Quote - stucture for historical price data
+// Quote - structure for historical price data
 type Quote struct {
 	Symbol    string      `json:"symbol"`
 	Precision int64       `json:"-"`
