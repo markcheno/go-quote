@@ -549,7 +549,7 @@ func tiingoDaily(symbol string, from, to time.Time, token string) (Quote, error)
 
 	url := fmt.Sprintf(
 		"https://api.tiingo.com/tiingo/daily/%s/prices?startDate=%s&endDate=%s",
-		symbol,
+		strings.TrimSpace(strings.Replace(symbol, "/", "-", -1)),
 		url.QueryEscape(from.Format("2006-1-2")),
 		url.QueryEscape(to.Format("2006-1-2")))
 
@@ -1261,6 +1261,12 @@ func NewMarketFile(market, filename string) error {
 	if err != nil {
 		return err
 	}
+
+	// Trim whitespace from each symbol
+	for i := range syms {
+		syms[i] = strings.TrimSpace(syms[i])
+	}
+
 	ba := []byte(strings.Join(syms, "\n"))
 	return os.WriteFile(filename, ba, 0644)
 }

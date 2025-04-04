@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/markcheno/go-quote"
@@ -32,6 +34,7 @@ Options:
   -years=<years>       number of years to download [default=5]
   -start=<datestr>     yyyy[-[mm-[dd]]]
   -end=<datestr>       yyyy[-[mm-[dd]]] [default=today]
+  -markets=<list>      list of valid markets to download (comma separated)
   -infile=<filename>   list of symbols to download
   -outfile=<filename>  output filename
   -period=<period>     1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|d|3d|w|m [default=d]
@@ -64,6 +67,7 @@ type quoteflags struct {
 	period  string
 	source  string
 	token   string
+	markets string
 	infile  string
 	outfile string
 	format  string
@@ -145,16 +149,82 @@ func setOutput(flags quoteflags) error {
 	return err
 }
 
-func getSymbols(flags quoteflags, args []string) ([]string, error) {
+// func getSymbols(flags quoteflags, args []string) ([]string, error) {
+// 	var err error
+// 	var symbols []string
+// 	if flags.infile != "" {
+// 		symbols, err = quote.NewSymbolsFromFile(flags.infile)
+// 		if err != nil {
+// 			return symbols, err
+// 		}
+// 	} else {
+// 		symbols = args
+// 	}
+// 	// make sure we found some symbols
+// 	if len(symbols) == 0 {
+// 		return symbols, fmt.Errorf("no symbols specified")
+// 	}
+// 	// validate outfileFlag
+// 	if len(symbols) > 1 && flags.outfile != "" && !flags.all {
+// 		return symbols, fmt.Errorf("outfile not valid with multiple symbols\nuse -all=true")
+// 	}
+// 	return symbols, nil
+// }
 
+func getSymbols(flags quoteflags, args []string) ([]string, error) {
 	var err error
 	var symbols []string
 
 	if flags.infile != "" {
-		symbols, err = quote.NewSymbolsFromFile(flags.infile)
-		if err != nil {
-			return symbols, err
+		// Check if infile contains wildcard characters
+		if strings.Contains(flags.infile, "*") || strings.Contains(flags.infile, "?") {
+			// Find all matching files
+			matches, err := filepath.Glob(flags.infile)
+			if err != nil {
+				return nil, fmt.Errorf("error processing wildcard pattern: %v", err)
+			}
+
+			if len(matches) == 0 {
+				return nil, fmt.Errorf("no files match pattern: %s", flags.infile)
+			}
+
+			// Read symbols from all matching files
+			for _, file := range matches {
+				fileSymbols, err := quote.NewSymbolsFromFile(file)
+				if err != nil {
+					return nil, fmt.Errorf("error reading symbols from %s: %v", file, err)
+				}
+				symbols = append(symbols, fileSymbols...)
+			}
+		} else {
+			// Regular file handling
+			symbols, err = quote.NewSymbolsFromFile(flags.infile)
+			if err != nil {
+				return symbols, err
+			}
 		}
+	} else if flags.markets != "" {
+
+		markets := strings.Split(flags.markets, ",")
+		for _, cmd := range markets {
+			if !quote.ValidMarket(cmd) {
+				return symbols, fmt.Errorf("invalid market specified: " + cmd)
+			}
+			file := cmd + ".csv"
+			switch cmd {
+			case "etf":
+				quote.NewEtfFile(file)
+
+			default:
+				quote.NewMarketFile(cmd, file)
+			}
+			fileSymbols, err := quote.NewSymbolsFromFile(file)
+			if err != nil {
+				return nil, fmt.Errorf("error reading symbols from %s: %v", file, err)
+			}
+			symbols = append(symbols, fileSymbols...)
+		}
+		return symbols, nil
 	} else {
 		symbols = args
 	}
@@ -289,17 +359,23 @@ func outputIndividual(symbols []string, flags quoteflags) error {
 	return nil
 }
 
-func handleCommand(cmd string, flags quoteflags) bool {
+func handleCommand(symbols []string, flags quoteflags) bool {
 
-	// handle market special commands
-	if !quote.ValidMarket(cmd) {
+	if flags.markets != "" {
 		return false
 	}
-	switch cmd {
-	case "etf":
-		quote.NewEtfFile(flags.outfile)
-	default:
-		quote.NewMarketFile(cmd, flags.outfile)
+
+	// handle market special commands
+	for _, cmd := range symbols {
+		if !quote.ValidMarket(cmd) {
+			return false
+		}
+		switch cmd {
+		case "etf":
+			quote.NewEtfFile(flags.outfile)
+		default:
+			quote.NewMarketFile(cmd, flags.outfile)
+		}
 	}
 	return true
 }
@@ -319,6 +395,7 @@ func main() {
 	flag.StringVar(&flags.token, "token", os.Getenv("TIINGO_API_TOKEN"), "tiingo api token")
 	flag.StringVar(&flags.infile, "infile", "", "input filename")
 	flag.StringVar(&flags.outfile, "outfile", "", "output filename")
+	flag.StringVar(&flags.markets, "markets", "", "list of valid markets (comma separated)")
 	flag.StringVar(&flags.format, "format", "csv", "csv|json")
 	flag.StringVar(&flags.log, "log", "stdout", "<filename>|stdout")
 	flag.BoolVar(&flags.all, "all", false, "all output in one file")
@@ -342,10 +419,12 @@ func main() {
 	symbols, err = getSymbols(flags, flag.Args())
 	check(err)
 
-	// check for and handled special commands
-	if handleCommand(symbols[0], flags) {
+	// check for and handle special commands
+	if handleCommand(symbols, flags) {
 		os.Exit(0)
 	}
+
+	//fmt.Println("Downloading quotes for", len(symbols), "symbols")
 
 	// main output
 	if flags.all {

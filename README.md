@@ -6,6 +6,8 @@ A free quote downloader library and cli
 
 Downloads daily historical price quotes from Tiingo and daily/intraday data from various api's. Written in pure Go. No external dependencies. Now downloads crypto coin historical data from various exchanges.
 
+- Update: 04/01/2025 - added markets flag, wildcard input files, multiple inputs
+
 - Update: 03/02/2025 - Removed obsolete Yahoo support
 
 - Update: 02/15/2024 - Major update: updated to Go 1.22, removed bittrex/binance support, fixed nasdaq/tiingo markets
@@ -54,6 +56,7 @@ Options:
   -start=<datestr>     yyyy[-[mm-[dd]]]
   -end=<datestr>       yyyy[-[mm-[dd]]] [default=today]
   -infile=<filename>   list of symbols to download
+  -markets=<list>      list of markets to download (comma separated)
   -outfile=<filename>  output filename
   -period=<period>     1m|3m|5m|15m|30m|1h|2h|4h|6h|8h|12h|d|3d|w|m [default=d]
   -source=<source>     tiingo|tiingo-crypto|coinbase [default=tiingo]
@@ -78,20 +81,24 @@ coinbase,tiingo-usd,tiingo-btc,tiingo-eth
 # display usage
 quote -help
 
+# downloads 10 years of smallcap, midcap, largecap and megacap stocks to stocks.csv
+quote -markets=smallcap,midcap,largecap,megacap -all=true -years=10 -outfile=stocks.csv
+
+# downloads 10 years of spy,qqq and djia to indexes.csv
+quote -years=10 -outfile=indexes.csv -all=true spy qqq djia
+
 # downloads 5 years of Tiingo SPY history to spy.csv (TIINGO_API_TOKEN must be set)
 quote spy
 
 # downloads 1 year of bitcoin history to BTC-USD.csv
 quote -years=1 -source=coinbase BTC-USD
 
-# downloads 1 year of Tiingo SPY & AAPL history to quotes.csv (TIINGO_API_TOKEN must be set)
-quote -years=1 -all=true -outfile=quotes.csv spy aapl
 
 # downloads full etf symbol list to etf.txt, also works for nasdaq,nasdaq100,nyse,amex
 quote etf
 
 # download fresh etf list and 5 years of etf data all in one file
-quote etf && quote -all=true -outfile=etf.csv -infile=etf.txt
+quote -markets=etf -all=true -outfile=etf.csv
 ```
 
 ## Install library
